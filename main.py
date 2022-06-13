@@ -135,10 +135,11 @@ class Game(pyglet.window.Window):
             self.y += dy
 
         self.rotation = rotation % 360
-        try:
-            print(1/dt)
-        except ZeroDivisionError:
-            pass
+        if SHOW_FPS:
+            try:
+                print(1/dt)
+            except ZeroDivisionError:
+                pass
 
 
 if __name__ == '__main__':
