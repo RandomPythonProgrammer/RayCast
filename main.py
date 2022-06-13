@@ -8,9 +8,12 @@ from numba import njit
 from numba.pycc import CC
 cc = CC("game")
 
-VIEW_RANGE = 250
+VIEW_RANGE = 1000
 BRIGHTNESS = 175
 SHOW_FPS = False
+
+HEIGHT = 2
+WIDTH = 0.01
 
 
 @njit(cache=True)
@@ -25,9 +28,9 @@ def get_lines(real_width: int, view_angle: float, height: int, scale: float, rot
         result = cast_ray(angle, VIEW_RANGE, map_data, x, y)
         color = result[:3]
         distance, px, py = result[4:]
-        distance = distance/numpy.power(VIEW_RANGE, 0.75)
+        distance *= (WIDTH/HEIGHT)
         if distance > 0:
-            shade = 1 / numpy.power(max(distance, 1), 1.5)
+            shade = 1 / numpy.power(max(distance, 1), 2.5)
             color = (color * shade).clip(0, BRIGHTNESS)
         r, g, b = color
         column_x = round((column + real_width / 2) * scale)
@@ -68,7 +71,7 @@ class Game(pyglet.window.Window):
         self.lines = []
         self.keys = pyglet.window.key.KeyStateHandler()
 
-        self.map = Image.open("map1.png")
+        self.map = Image.open("map2.png")
         self.map_data = numpy.asarray(self.map)
 
     def render(self, dt: float):
@@ -112,7 +115,7 @@ class Game(pyglet.window.Window):
         image.show()
 
     def update(self, dt: float):
-        speed = 75 * dt
+        speed = 150 * dt
         rotation_speed = 50 * dt
         rotation = self.rotation
         radians = math.radians(rotation)
