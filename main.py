@@ -9,29 +9,31 @@ from numba.pycc import CC
 cc = CC("game")
 
 VIEW_RANGE = 1000
-BRIGHTNESS = 175
+BRIGHTNESS = 2
 SHOW_FPS = False
+MAP = Image.open("map2.png")
+MAP_DATA = numpy.asarray(MAP)
 
 HEIGHT = 2
 WIDTH = 0.01
 
 
-@njit(cache=True)
-@cc.export('get_lines', 'int64[:, :](int64, float64, int64, float64, float64, int64, int64, uint8[:, :, :])')
-def get_lines(real_width: int, view_angle: float, height: int, scale: float, rotation: float, x: int, y: int, map_data: numpy.ndarray):
+@njit
+@cc.export('get_lines', 'int64[:, :](int64, float64, int64, float64, float64, int64, int64)')
+def get_lines(real_width: int, view_angle: float, height: int, scale: float, rotation: float, x: int, y: int):
     half_width = real_width/2
     columns = range(-round(half_width), round(half_width))
     return_array = numpy.zeros(shape=(len(columns), 6), dtype="int64")
     rotation_offset = view_angle / real_width
     for column in columns:
         angle = math.radians(rotation_offset * column - rotation)
-        result = cast_ray(angle, VIEW_RANGE, map_data, x, y)
+        result = cast_ray(angle, VIEW_RANGE, x, y)
         color = result[:3]
         distance, px, py = result[4:]
         distance *= (WIDTH/HEIGHT)
         if distance > 0:
-            shade = 1 / numpy.power(max(distance, 1), 2.5)
-            color = (color * shade).clip(0, BRIGHTNESS)
+            shade = min(BRIGHTNESS / numpy.power(max(distance, 1), 2.5), 1)
+            color *= shade
         r, g, b = color
         column_x = round((column + real_width / 2) * scale)
         column_height = round(height / distance)
@@ -40,16 +42,16 @@ def get_lines(real_width: int, view_angle: float, height: int, scale: float, rot
     return return_array
 
 
-@njit(cache=True)
-@cc.export('cast_ray', 'float64[:](float64, int64, uint8[:, :, :], int64, int64)')
-def cast_ray(angle: float, limit: int, map_data: numpy.ndarray, x: int, y: int):
-    width, height, depth = map_data.shape
+@njit
+@cc.export('cast_ray', 'float64[:](float64, int64, int64, int64)')
+def cast_ray(angle: float, limit: int, x: int, y: int):
+    width, height, depth = MAP_DATA.shape
     dx, dy = numpy.cos(angle), numpy.sin(angle)
     for i in range(limit):
         position = round(x + (dx * i)), round((height - 1) - y + (dy * i))
         px, py = position
         if 0 <= py < height and 0 <= px < width:
-            temp_color = map_data[py][px]
+            temp_color = MAP_DATA[py][px]
             if temp_color[-1] > 0:
                 distance = numpy.sqrt(numpy.square((px - x)) + numpy.square((py - (height - 1 - y))))
                 r, g, b, a = temp_color
@@ -63,16 +65,13 @@ class Game(pyglet.window.Window):
     def __init__(self, width, height):
         super().__init__(width, height)
         self.set_vsync(False)
-        self.scale = 8
+        self.scale = 2
         self.x = self.y = self.rotation = 0
         self.real_width = round(self.width / self.scale)
         self.view_angle = 90
         self.batch = pyglet.graphics.Batch()
         self.lines = []
         self.keys = pyglet.window.key.KeyStateHandler()
-
-        self.map = Image.open("map2.png")
-        self.map_data = numpy.asarray(self.map)
 
     def render(self, dt: float):
         self.cast_rays()
@@ -81,7 +80,7 @@ class Game(pyglet.window.Window):
 
     def cast_rays(self):
         self.lines.clear()
-        lines = get_lines(self.real_width, self.view_angle, self.height, self.scale, self.rotation, self.x, self.y, self.map_data)
+        lines = get_lines(self.real_width, self.view_angle, self.height, self.scale, self.rotation, self.x, self.y)
         for i in range(lines.shape[0]):
             x, height_offset, height, r, g, b = lines[i]
             self.lines.append(pyglet.shapes.Line(
@@ -103,13 +102,13 @@ class Game(pyglet.window.Window):
         self.keys[symbol] = False
 
     def show_casts(self):
-        image = self.map.copy()
+        image = MAP.copy()
         draw = PIL.ImageDraw.Draw(image)
         rotation_offset = self.view_angle / self.real_width
 
         for column in range(-round(self.real_width / 2), round(self.real_width / 2)):
             angle = math.radians(rotation_offset * column - self.rotation)
-            r, g, b, a, distance, px, py = cast_ray(angle, VIEW_RANGE, self.map_data, self.x, self.y)
+            r, g, b, a, distance, px, py = cast_ray(angle, VIEW_RANGE, self.x, self.y)
             if distance >= 0:
                 draw.line(((self.x, image.height - 1 - self.y), (px, py)))
         image.show()
